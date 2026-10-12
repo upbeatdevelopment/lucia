@@ -68,7 +68,7 @@ Dark-only, game-only. There are no logos, hero/tagline sections, promotional tex
 
 ## Development
 
-Source repository target: [upbeatdevelopment/lucia](https://github.com/upbeatdevelopment/lucia). Version control includes source, tests and documentation, not local SQLite history, dependencies, environment files or generated output.
+Source repository: [upbeatdevelopment/lucia](https://github.com/upbeatdevelopment/lucia). Version control includes source, tests and documentation, not local SQLite history, dependencies, environment files or generated output. On this development machine, use `git@github-upbeatdevelopment:upbeatdevelopment/lucia.git` when pushing: the existing SSH alias selects the repository owner's identity, whereas the ordinary GitHub host selects an account without write access.
 
 ```bash
 node server.js

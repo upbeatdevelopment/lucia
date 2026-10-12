@@ -5,6 +5,13 @@ sidebar_position: 3
 
 # Changelog
 
+## 2026-10-12 — Use the configured owner identity for publication
+
+**Why:** The user asked us to handle publication with the machine's existing access. The default GitHub identity lacks repository write permission, but the preconfigured github-upbeatdevelopment SSH alias authenticates as the owner; no new credentials or access grants are needed.
+
+- **Introduction:** Documents the existing owner-account SSH alias for pushes from this machine and keeps personal history/generated files out of version control.
+- **Requirements:** Reopens 41 using the correct identity; publication still requires a successful push and matching remote/local commit IDs.
+
 ## 2026-10-12 — Separate statistics from configuration
 
 **Why:** The user wants statistics in their own drawer rather than mixed into Settings; Progress should be directly discoverable without scrolling past configuration.
