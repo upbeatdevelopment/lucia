@@ -12,11 +12,21 @@ async function dismissResult(page) {
 }
 async function openSettings(page) {
   await dismissResult(page);
+  await closeStats(page);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.locator('.settings-drawer')).toBeVisible();
 }
 async function closeSettings(page) {
   if (await page.locator('.settings-drawer').isVisible()) await page.getByRole('button', { name: 'Close settings' }).click();
+}
+async function openStats(page) {
+  await dismissResult(page);
+  await closeSettings(page);
+  await page.getByRole('button', { name: 'Stats', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Stats', exact: true })).toBeVisible();
+}
+async function closeStats(page) {
+  if (await page.locator('.stats-drawer').isVisible()) await page.getByRole('button', { name: 'Close stats' }).click();
 }
 async function configure(page, direction = 'hear', mix) {
   await openSettings(page);
@@ -27,7 +37,7 @@ async function configure(page, direction = 'hear', mix) {
 async function begin(page, direction = 'hear', mix) {
   await configure(page, direction, mix);
   await page.getByRole('button', { name: 'Start', exact: true }).click();
-  if (direction === 'keys') await expect(page.locator(`${piano} button:not(:disabled)`)).not.toHaveCount(0);
+  if (direction === 'keys') await expect(page.locator('.key-selection')).toBeVisible();
   else await expect(page.getByRole('textbox', { name: 'Your answer' })).toBeFocused();
 }
 async function freeze(page) {
@@ -186,13 +196,16 @@ test('all quiz parts and full 8/4/2 cycles, completion popup, SQLite history and
   }
   await expect(page.getByRole('dialog', { name: 'Quiz complete' })).toBeVisible();
   await expect(page.locator('.answer-popup .result-summary')).toContainText('171 correct');
+  await expect(page.locator('.answer-popup button[data-note]:disabled')).toHaveCount(0);
+  await page.locator('.answer-popup').getByRole('button', { name: keyName('C4'), exact: true }).click();
+  await expect(page.locator('.answer-popup .result-summary')).toContainText('171 correct');
   await expect(page.locator('.game-card .result-summary, .game-card .score-value, .game-card .challenge-heading')).toHaveCount(0);
   const score = await page.locator('.score-value').innerText();
   const response = await savedSession; expect(response.status()).toBe(201);
   const data = await (await request.get('/api/history')).json();
   expect(data.sessions.find((session) => session.id === response.request().postDataJSON().id)).toMatchObject({ correct_answers: 171, end_reason: 'complete' });
   await page.clock.resume();
-  await openSettings(page);
+  await openStats(page);
   await page.getByRole('button', { name: 'History', exact: true }).click();
   // Other tests advance their clock; the newest timestamp need not belong to this quiz.
   const completedRow = page.locator('.session-table tbody tr').filter({ has: page.getByRole('cell', { name: score, exact: true }) }).filter({ hasText: 'Completed' });
@@ -200,7 +213,7 @@ test('all quiz parts and full 8/4/2 cycles, completion popup, SQLite history and
   await page.waitForFunction(() => { const c = document.querySelector('.chart-container canvas'); return c && c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some((n) => n); });
   await page.locator('.chart-container').scrollIntoViewIfNeeded();
   await page.screenshot({ path: '/tmp/piano-history-chart.png', fullPage: false });
-  await closeSettings(page);
+  await closeStats(page);
   await page.getByRole('button', { name: 'View result' }).click();
   await page.getByRole('button', { name: 'New session' }).click();
   await expect(page.locator('.round-label > strong')).toHaveText('01');
@@ -298,11 +311,11 @@ test('response times exclude popup/drawer pauses, keep retries and survive reloa
   expect(Math.abs(entry.responseSeconds - 4)).toBeLessThan(0.05);
   const data = await (await request.get('/api/history')).json();
   expect(data.timings.find((row) => row.id === entry.id)).toMatchObject({ response_seconds: entry.responseSeconds, duration_seconds: 8 });
-  await page.clock.resume(); await openSettings(page);
+  await page.clock.resume(); await openStats(page);
   const row = page.locator(`.timing-table tr[data-attempt-id="${entry.id}"]`);
   await expect(row).toContainText('4.00 s'); await expect(row).toContainText('Correct');
   await expect(page.getByRole('img', { name: 'Correct response times over practice attempts' })).toBeVisible();
-  await page.reload(); await openSettings(page);
+  await page.reload(); await openStats(page);
   await expect(page.locator(`.timing-table tr[data-attempt-id="${entry.id}"]`)).toContainText('4.00 s');
 });
 
@@ -345,12 +358,121 @@ test('queued attempt retries retain their original timing and timestamp', async 
   expect(data.timings.find((row) => row.id === original.id)).toMatchObject({ response_seconds: original.responseSeconds, duration_seconds: 8, completed_at: original.completedAt });
 });
 
+test('Stats has its own drawer, separates controls and safely pauses play', async ({ page }) => {
+  await open(page); await openSettings(page);
+  await expect(page.locator('.settings-drawer .best-value, .settings-drawer .drawer-score, .settings-drawer .history-control, .settings-drawer .progress-panel')).toHaveCount(0);
+  await expect(page.getByRole('switch', { name: 'Quiz sound', exact: true })).toBeVisible();
+  await closeSettings(page); await openStats(page);
+  await expect(page.locator('.side-drawer[open]')).toHaveCount(1);
+  await expect(page.locator('.stats-drawer .best-value')).toBeVisible();
+  await expect(page.locator('.stats-drawer .settings-panel, .stats-drawer .drawer-playback, .stats-drawer .drawer-sound')).toHaveCount(0);
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Your answer' })).toHaveCount(0);
+  await page.keyboard.press('Escape'); await expect(page.locator('.stats-drawer')).not.toBeVisible();
+  await begin(page, 'hear', 'balanced'); await freeze(page);
+  const baseline = Number(await page.getByRole('progressbar', { name: 'Question timer' }).getAttribute('aria-valuenow'));
+  await page.clock.runFor(1000); await openStats(page);
+  await expect(page.locator('.challenge-heading h1')).toHaveText('Paused');
+  const elapsed = await page.getByRole('progressbar', { name: 'Question timer' }).getAttribute('aria-valuenow');
+  await page.clock.runFor(10000);
+  await expect(page.getByRole('progressbar', { name: 'Question timer' })).toHaveAttribute('aria-valuenow', elapsed);
+  await expect(page.getByRole('button', { name: 'Resume session' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.stats-drawer')).not.toBeVisible();
+  await expect(page.locator('.challenge-heading h1')).toHaveText('Paused');
+  await openSettings(page); await expect(page.getByLabel('Exercise', { exact: true })).toBeDisabled();
+  await closeSettings(page); await page.locator('.answer-area').getByRole('button', { name: 'Resume', exact: true }).click();
+  const saved = page.waitForResponse((response) => response.url().endsWith('/api/attempts') && response.request().method() === 'POST');
+  await page.clock.runFor(1000); await answer(page);
+  const entry = (await saved).request().postDataJSON();
+  expect(Math.abs(entry.responseSeconds - (baseline + 2))).toBeLessThan(0.1);
+});
+
+test('New session dismisses Stats when opening it races the question deadline', async ({ page }) => {
+  await open(page); await begin(page, 'hear', 'balanced'); await freeze(page);
+  // Expire the real deadline without allowing the next interval tick to run.
+  await page.evaluate(() => { const now = performance.now.bind(performance); performance.now = () => now() + 9000; });
+  await page.getByRole('button', { name: 'Stats', exact: true }).click();
+  await expect(page.locator('.answer-popup')).toBeVisible();
+  await expect(page.locator('.stats-drawer')).toBeVisible();
+  await page.clock.resume();
+  await page.getByRole('button', { name: 'New session', exact: true }).click();
+  await expect(page.locator('.stats-drawer')).not.toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Your answer' })).toBeFocused();
+  await expect(page.locator('.round-label > strong')).toHaveText('01');
+});
+
+test('manual key audio works before play, in hear mode, paused, in popup and after finishing even with quiz mute', async ({ page }) => {
+  const attempts = [];
+  page.on('request', (request) => { if (request.method() === 'POST' && request.url().endsWith('/api/attempts')) attempts.push(request.postDataJSON()); });
+  await open(page);
+  await page.evaluate(async () => { const Tone = await import('tone'); window.meter = new Tone.Meter({ smoothing: 0 }); Tone.getDestination().connect(window.meter); });
+  const audition = async (container, note) => {
+    await expect.poll(() => page.evaluate(() => window.meter.getValue())).toBeLessThan(-75);
+    await container.getByRole('button', { name: keyName(note), exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.meter.getValue())).toBeGreaterThan(-60);
+  };
+  await expect(page.locator(`${piano} button:disabled`)).toHaveCount(0);
+  await audition(page.locator(main), 'C4');
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
+  expect(attempts).toHaveLength(0);
+  await openSettings(page); await page.getByRole('switch', { name: 'Quiz sound', exact: true }).uncheck();
+  await audition(page.locator(main), 'A4');
+  await expect(page.locator('.settings-drawer')).toBeVisible(); await closeSettings(page);
+  await openStats(page);
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeDisabled();
+  await audition(page.locator(main), 'D4');
+  await expect(page.locator('.stats-drawer')).toBeVisible(); await closeStats(page);
+  await begin(page, 'hear', 'balanced');
+  await audition(page.locator(main), 'F4');
+  await expect(page.locator('.round-label > strong')).toHaveText('01'); expect(attempts).toHaveLength(0);
+  await page.getByRole('button', { name: 'Pause session' }).click();
+  const elapsed = await page.getByRole('progressbar', { name: 'Question timer' }).getAttribute('aria-valuenow');
+  await audition(page.locator(main), 'G4');
+  await expect(page.getByRole('progressbar', { name: 'Question timer' })).toHaveAttribute('aria-valuenow', elapsed);
+  await expect(page.locator('.challenge-heading h1')).toHaveText('Paused'); expect(attempts).toHaveLength(0);
+  await page.locator('.answer-area').getByRole('button', { name: 'Resume', exact: true }).click();
+  const saved = page.waitForResponse((response) => response.url().endsWith('/api/attempts') && response.request().method() === 'POST');
+  await wrong(page); await saved;
+  await audition(page.locator('.answer-popup'), 'C4');
+  expect(attempts).toHaveLength(1);
+  await dismissResult(page); await audition(page.locator(main), 'B4');
+  await expect(page.getByRole('button', { name: 'View result' })).toBeVisible(); expect(attempts).toHaveLength(1);
+  await expect(page.locator('.correct-value')).toHaveText('0');
+});
+
+test('running key answers grade immediately without waiting for manual audio initialization', async ({ page }) => {
+  await page.route('https://esm.sh/tone@15.1.22', (route) => route.fulfill({ contentType: 'text/javascript', body: `
+    export async function start() { if (window.holdAudio) await new Promise(resolve => { window.resumeAudio = resolve; }); }
+    export class Synth {}
+    export class PolySynth {
+      toDestination() { window.playedNotes = []; return this; }
+      triggerAttackRelease(notes) { window.playedNotes.push(notes); }
+      releaseAll() {}
+    }
+    export function getContext() { return { state: 'running' }; }
+    export function now() { return 0; }
+  ` }));
+  await page.addInitScript(() => { Math.random = () => 0; });
+  await open(page); await openSettings(page); await page.getByRole('switch', { name: 'Quiz sound', exact: true }).uncheck(); await closeSettings(page);
+  await begin(page, 'keys', 'balanced');
+  await page.evaluate(() => { window.holdAudio = true; });
+  const saved = page.waitForResponse((response) => response.url().endsWith('/api/attempts') && response.request().method() === 'POST');
+  await page.locator(main).getByRole('button', { name: keyName('C4'), exact: true }).click();
+  expect((await saved).request().postDataJSON()).toMatchObject({ result: 'correct', answer: 'C4' });
+  await expect(page.locator('.round-label > strong')).toHaveText('02');
+  expect(await page.evaluate(() => window.playedNotes)).toEqual([]);
+  await page.evaluate(() => { window.holdAudio = false; window.resumeAudio(); });
+  await expect.poll(() => page.evaluate(() => window.playedNotes)).toEqual([['C4']]);
+});
+
 test('Progress shows latest times and separate speed lines, filters phases and fits mobile', async ({ page }) => {
   const base = { session_id: 'progress-fixture', target: 'C#', stage: 'notes', inversion: 0, direction: 'hear', result: 'correct', response_seconds: 1.2, duration_seconds: 8 };
   const timings = Array.from({ length: 14 }, (_, index) => ({ ...base, id: `progress-${index}`, completed_at: new Date(Date.UTC(2026, 0, 1, 12, 0, 14 - index)).toISOString(), direction: index % 2 ? 'keys' : 'hear', response_seconds: index === 1 ? 8 : index === 13 ? 0 : 1.2 + index / 10, result: index === 1 ? 'timeout' : index === 2 ? 'wrong' : 'correct' }));
   timings.push({ ...base, id: 'major-time', completed_at: '2026-01-01T11:59:59.000Z', stage: 'chords', response_seconds: 2.5 }, { ...base, id: 'first-time', completed_at: '2026-01-01T11:59:58.000Z', stage: 'inversions', inversion: 1, response_seconds: 3.4 }, { ...base, id: 'second-time', completed_at: '2026-01-01T11:59:57.000Z', stage: 'inversions', inversion: 2, response_seconds: 3.8 });
   await page.route('**/api/history', (route) => route.fulfill({ json: { sessions: [], attempts: [], stats: [], practice: {}, timings } }));
-  await open(page); await openSettings(page);
+  await open(page); await openStats(page);
   await expect(page.locator('.progress-panel')).toContainText('Latest times');
   await expect(page.locator('.timing-table tbody tr')).toHaveCount(10);
   await expect(page.locator('.timing-table')).toContainText('Timeout'); await expect(page.locator('.timing-table')).toContainText('Wrong');
@@ -378,15 +500,15 @@ test('Progress shows latest times and separate speed lines, filters phases and f
 
 test('Progress handles legacy empty history, server errors and unavailable charts', async ({ page }) => {
   await page.route('**/api/history', (route) => route.fulfill({ json: { sessions: [], attempts: [], stats: [], practice: {} } }));
-  await open(page); await openSettings(page);
+  await open(page); await openStats(page);
   await expect(page.locator('.progress-panel')).toContainText('Timing starts with new practice');
-  await closeSettings(page); await page.unroute('**/api/history');
+  await closeStats(page); await page.unroute('**/api/history');
   await page.route('**/api/history', (route) => route.fulfill({ status: 503, json: { error: 'Unavailable' } }));
-  await openSettings(page); await expect(page.locator('.progress-panel [role=alert]')).toContainText('Progress is unavailable');
-  await closeSettings(page); await page.unroute('**/api/history');
+  await openStats(page); await expect(page.locator('.progress-panel [role=alert]')).toContainText('Progress is unavailable. Reopen Stats');
+  await closeStats(page); await page.unroute('**/api/history');
   await page.route('**/api/history', (route) => route.fulfill({ json: { timings: [{ id: 'chart-failure', stage: 'notes', target: 'C', inversion: 0, direction: 'hear', result: 'correct', response_seconds: 1.5, duration_seconds: 8, completed_at: '2026-01-01T12:00:00.000Z' }] } }));
   await page.route('https://esm.sh/chart.js@4.4.7/auto', (route) => route.abort());
-  await openSettings(page);
+  await openStats(page);
   await expect(page.locator('.progress-panel [role=alert]')).toContainText('speed graph couldn’t load');
   await expect(page.locator('.timing-table')).toContainText('1.50 s');
 });
@@ -407,12 +529,12 @@ test('retry popup pauses the timer; drawer sound/replay work while paused', asyn
   expect(Math.abs(Number(await page.locator('.countdown strong').innerText()) - (Number(paused) - 0.5))).toBeLessThanOrEqual(0.15);
   await openSettings(page);
   await expect(page.getByLabel('Practice mix')).toBeDisabled();
-  await expect(page.getByRole('switch', { name: 'Sound', exact: true })).toBeEnabled();
+  await expect(page.getByRole('switch', { name: 'Quiz sound', exact: true })).toBeEnabled();
   const drawerTime = await page.locator('.countdown strong').innerText();
   await page.getByRole('button', { name: 'Replay', exact: true }).click();
   await page.clock.runFor(500);
   await expect(page.locator('.countdown strong')).toHaveText(drawerTime);
-  await page.getByRole('switch', { name: 'Sound', exact: true }).uncheck();
+  await page.getByRole('switch', { name: 'Quiz sound', exact: true }).uncheck();
   await expect(page.getByRole('button', { name: 'Replay', exact: true })).toBeDisabled();
   await page.screenshot({ path: '/tmp/piano-drawer-desktop.png', fullPage: false });
   await page.keyboard.press('Escape');
@@ -464,9 +586,9 @@ test('ear training audio, paused manual replay, mute and resume', async ({ page 
   await page.evaluate(async () => { const Tone = await import('tone'); window.meter = new Tone.Meter({ smoothing: 0 }); Tone.getDestination().connect(window.meter); });
   await expect.poll(() => page.evaluate(() => window.meter.getValue())).toBeGreaterThan(-60);
   await openSettings(page);
-  await page.getByRole('switch', { name: 'Sound', exact: true }).uncheck(); await page.waitForTimeout(1200);
+  await page.getByRole('switch', { name: 'Quiz sound', exact: true }).uncheck(); await page.waitForTimeout(1200);
   expect(await page.evaluate(() => window.meter.getValue())).toBeLessThan(-75);
-  await page.getByRole('switch', { name: 'Sound', exact: true }).check();
+  await page.getByRole('switch', { name: 'Quiz sound', exact: true }).check();
   await page.getByRole('button', { name: 'Replay', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.meter.getValue())).toBeGreaterThan(-60);
   await closeSettings(page); await page.locator('.answer-area').getByRole('button', { name: 'Resume', exact: true }).click();
@@ -512,7 +634,7 @@ test('ear-only failure reveals the actual note and saved mistake', async ({ page
   const data = await (await request.get('/api/history')).json();
   expect(data.attempts.find((a) => a.id === id)).toMatchObject({ target, answer: 'H', result: 'wrong' });
   await page.screenshot({ path: '/tmp/piano-correct-answer.png', fullPage: false });
-  await openSettings(page); await page.getByRole('button', { name: 'History', exact: true }).click();
+  await openStats(page); await page.getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.locator('.mistake-table')).toContainText(target.replaceAll('#', '♯'));
 });
 

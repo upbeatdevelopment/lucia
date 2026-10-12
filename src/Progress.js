@@ -71,7 +71,7 @@ export default function Progress({ refresh }) {
       <label>Exercise<select aria-label="Progress exercise" value=${direction} onChange=${(event) => setDirection(event.target.value)}><option value="all">Both directions</option><option value="hear">Hear → name</option><option value="keys">Name → keys</option></select></label>
     </div>
     ${status === 'loading' && html`<p className="muted">Loading progress…</p>`}
-    ${status === 'error' && html`<p role="alert">Progress is unavailable. Reopen Settings to retry.</p>`}
+    ${status === 'error' && html`<p role="alert">Progress is unavailable. Reopen Stats to retry.</p>`}
     ${status === 'ready' && html`
       <div className="progress-summary">${['hear', 'keys'].filter((exercise) => direction === 'all' || direction === exercise).map((exercise) => html`<div key=${exercise}><span>${exercises[exercise]}</span><strong>${seconds(model.averages[exercise].seconds)}</strong><small>Average · last ${model.averages[exercise].count} correct</small></div>`)}</div>
       ${model.points.length > 0 && html`<div className="timing-chart"><canvas ref=${canvas} role="img" aria-label="Correct response times over practice attempts" /></div><p className="progress-description">Correct answers only. Each exercise has its own line.</p>`}

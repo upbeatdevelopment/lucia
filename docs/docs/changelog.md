@@ -5,6 +5,22 @@ sidebar_position: 3
 
 # Changelog
 
+## 2026-10-12 — Separate statistics from configuration
+
+**Why:** The user wants statistics in their own drawer rather than mixed into Settings; Progress should be directly discoverable without scrolling past configuration.
+
+- **Introduction:** Separate Stats and Settings buttons open mutually exclusive drawers. Stats holds scores, Progress and History; Settings holds configuration, Sound and Replay. Either pauses play, dismissal leaves it paused, and Ctrl+Enter is guarded while either is open.
+- **README:** Routes progress browsing directly through Stats and explains each drawer's contents.
+- **Requirements:** Marks 42 delivered with 42 unit and 24 browser tests passing, single-drawer/content separation, pause timing and shortcut/control locks. Covers the reviewed deadline/drawer race: New session dismisses an overlapping drawer before starting. Desktop/mobile live-5174 drawers were inspected without history writes.
+
+## 2026-10-12 — Let piano keys always audition
+
+**Why:** The user wants to click notes and hear them regardless of quiz state, rather than having the piano disabled outside running key exercises.
+
+- **Introduction:** Main and popup keys always audition, initialize audio on demand and bypass quiz mute. Only running Name → keys main-keyboard clicks are graded; other clicks leave the quiz untouched. Non-modal drawers leave uncovered keys interactive while keeping other quiz actions locked. Quiz sound controls automatic prompts and Replay.
+- **README:** Explains free key audition and the narrower meaning of Quiz sound.
+- **Requirements:** Marks 43 delivered with real Tone meter checks across ready/hear/paused/popup/finished states, quiz mute and both open drawers. Completion keys remain playable without changing counts; a deliberately delayed audio start proves key-answer grading does not await audio. Syntax and App/Progress diagnostics pass; the full suite is 42 unit/24 browser tests.
+
 ## 2026-10-12 — Prepare GitHub publication
 
 **Why:** The user requested publication to upbeatdevelopment/lucia. The source should be versioned without publishing their local piano history or generated/private files.
