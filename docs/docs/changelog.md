@@ -10,7 +10,7 @@ sidebar_position: 3
 **Why:** The user asked us to handle publication with the machine's existing access. The default GitHub identity lacks repository write permission, but the preconfigured github-upbeatdevelopment SSH alias authenticates as the owner; no new credentials or access grants are needed.
 
 - **Introduction:** Documents the existing owner-account SSH alias for pushes from this machine and keeps personal history/generated files out of version control.
-- **Requirements:** Reopens 41 using the correct identity; publication still requires a successful push and matching remote/local commit IDs.
+- **Requirements:** Marks 41 delivered after pushing main through the owner identity and verifying matching remote/local commit IDs. Publication includes the README and Stats/free-play feature commit efe91e8; tracked-file checks confirm private/generated content is excluded.
 
 ## 2026-10-12 — Separate statistics from configuration
 
